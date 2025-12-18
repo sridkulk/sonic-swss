@@ -67,6 +67,7 @@ enum class VR_TYPE
 struct VNetInfo
 {
     string tunnel;
+    string tunnel2;
     uint32_t vni;
     set<string> peers;
     string scope;
@@ -96,12 +97,13 @@ class VNetObject
 public:
     VNetObject(const VNetInfo& vnetInfo) :
                tunnel_(vnetInfo.tunnel),
+               tunnel2_(vnetInfo.tunnel2),
                peer_list_(vnetInfo.peers),
                vni_(vnetInfo.vni),
                scope_(vnetInfo.scope),
                advertise_prefix_(vnetInfo.advertise_prefix),
                overlay_dmac_(vnetInfo.overlay_dmac)
-               { }
+               {}
 
     virtual bool updateObj(vector<sai_attribute_t>&) = 0;
 
@@ -118,6 +120,11 @@ public:
     string getTunnelName() const
     {
         return tunnel_;
+    }
+
+    string getTunnel2Name() const
+    {
+        return tunnel2_;
     }
 
     uint32_t getVni() const
@@ -145,11 +152,17 @@ public:
         overlay_dmac_ = mac_addr;
     }
 
+    void setTunne2Name(const string& tunnel2)
+    {
+        tunnel2_ = tunnel2;
+    }
+
     virtual ~VNetObject() noexcept(false) {};
 
 private:
     set<string> peer_list_ = {};
     string tunnel_;
+    string tunnel2_;
     uint32_t vni_;
     string scope_;
     bool advertise_prefix_;
@@ -264,6 +277,11 @@ public:
     string getTunnelName(const std::string& name) const
     {
         return vnet_table_.at(name)->getTunnelName();
+    }
+
+    string getTunnelNameForNextHop(const std::string& name, const NextHopKey& nh) const
+    {
+        return vnet_table_.at(name)->getTunnelNameForNextHop(nh);
     }
 
     bool getAdvertisePrefix(const std::string& name) const
