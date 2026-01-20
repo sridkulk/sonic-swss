@@ -38,7 +38,7 @@ const request_description_t vnet_request_description = {
     { REQ_T_STRING },
     {
         { "src_mac",            REQ_T_MAC_ADDRESS },
-        { "vxlan_tunnel",       REQ_T_STRING },
+        { "vxlan_tunnel",       REQ_T_SET },
         { "vni",                REQ_T_UINT },
         { "peer_list",          REQ_T_SET },
         { "guid",               REQ_T_STRING },
@@ -66,8 +66,7 @@ enum class VR_TYPE
 
 struct VNetInfo
 {
-    string tunnel;
-    string tunnel2;
+    set<string> tunnels;
     uint32_t vni;
     set<string> peers;
     string scope;
@@ -96,8 +95,7 @@ class VNetObject
 {
 public:
     VNetObject(const VNetInfo& vnetInfo) :
-               tunnel_(vnetInfo.tunnel),
-               tunnel2_(vnetInfo.tunnel2),
+               tunnel_list_(vnetInfo.tunnels),
                peer_list_(vnetInfo.peers),
                vni_(vnetInfo.vni),
                scope_(vnetInfo.scope),
@@ -117,14 +115,9 @@ public:
         return peer_list_;
     }
 
-    string getTunnelName() const
+    const set<string>& getTunnelList() const
     {
-        return tunnel_;
-    }
-
-    string getTunnel2Name() const
-    {
-        return tunnel2_;
+        return tunnel_list_;
     }
 
     uint32_t getVni() const
@@ -152,17 +145,11 @@ public:
         overlay_dmac_ = mac_addr;
     }
 
-    void setTunne2Name(const string& tunnel2)
-    {
-        tunnel2_ = tunnel2;
-    }
-
     virtual ~VNetObject() noexcept(false) {};
 
 private:
     set<string> peer_list_ = {};
-    string tunnel_;
-    string tunnel2_;
+    set<string> tunnel_list_ = {};
     uint32_t vni_;
     string scope_;
     bool advertise_prefix_;
@@ -230,6 +217,7 @@ public:
 
     sai_object_id_t getTunnelNextHop(NextHopKey& nh);
     bool removeTunnelNextHop(NextHopKey& nh);
+    string getTunnelNameForNextHop(const NextHopKey& nh);
     void increaseNextHopRefCount(const nextHop&);
     void decreaseNextHopRefCount(const nextHop&);
 
@@ -276,12 +264,18 @@ public:
 
     string getTunnelName(const std::string& name) const
     {
-        return vnet_table_.at(name)->getTunnelName();
+        return *vnet_table_.at(name)->getTunnelList().begin();
     }
 
-    string getTunnelNameForNextHop(const std::string& name, const NextHopKey& nh) const
+    const set<string>& getTunnelList(const std::string& name) const
     {
-        return vnet_table_.at(name)->getTunnelNameForNextHop(nh);
+        return vnet_table_.at(name)->getTunnelList();
+    }
+
+    string getTunnelNameForNextHop(const std::string& vnet_name, const NextHopKey& nh) const
+    {
+        auto *vnet_object = getTypePtr<VNetVrfObject>(vnet_name);
+        return vnet_object->getTunnelNameForNextHop(nh);
     }
 
     bool getAdvertisePrefix(const std::string& name) const

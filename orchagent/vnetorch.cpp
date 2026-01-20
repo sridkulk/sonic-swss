@@ -331,38 +331,26 @@ bool VNetVrfObject::removeTunnelNextHop(NextHopKey& nh)
     return true;
 }
 
-string VNetVrfObject::getTunnelNameForNextHop(NextHopKey& nh)
+string VNetVrfObject::getTunnelNameForNextHop(const NextHopKey& nh)
 {
-    auto tun_name = getTunnelName();
-    auto tun2_name = getTunnel2Name();
-
-    if (tun2_name.empty())
-    {
-        return tun_name;
-    }
+    auto tunnel_list = getTunnelList();
 
     VxlanTunnelOrch* vxlan_orch = gDirectory.get<VxlanTunnelOrch*>();
-
-    auto tun1_obj = vxlan_orch->getVxlanTunnel(tun_name);
-    auto tun2_obj = vxlan_orch->getVxlanTunnel(tun2_name);
-
     auto nh_ip_family = nh.ip_address.isV4() ? AF_INET : AF_INET6;
-    tun1_ip_family == tun1_obj->getSrcIP().isV4() ? AF_INET : AF_INET6;
-    tun2_ip_family == tun2_obj->getSrcIP().isV4() ? AF_INET : AF_INET6;
 
-    if (nh_ip_family == tun1_ip_family)
+    for (string tunnel_name : tunnel_list)
     {
-        return tun_name;
+        auto tun_obj = vxlan_orch->getVxlanTunnel(tunnel_name);
+        auto tun_ip_family = tun_obj->getSrcIP().isV4() ? AF_INET : AF_INET6;
+
+        if (nh_ip_family == tun_ip_family)
+        {
+            return tunnel_name;
+        }
     }
-    else if (nh_ip_family == tun2_ip_family)
-    {
-        return tun2_name;
-    }
-    else
-    {
-        throw std::runtime_error("NH Tunnel get name failed for " + vnet_name_ +
+
+    throw std::runtime_error("NH Tunnel get name failed for " + vnet_name_ +
                                  " no matching tunnel found");
-    }
 }
 
 VNetVrfObject::~VNetVrfObject()
@@ -463,8 +451,7 @@ bool VNetOrch::addOperation(const Request& request)
     set<string> peer_list = {};
     bool peer = false, create = false, advertise_prefix = false;
     uint32_t vni=0;
-    string tunnel;
-    string tunnel2;
+    set<string> tunnel_list = {};
     string scope;
     swss::MacAddress overlay_dmac;
 
@@ -488,11 +475,7 @@ bool VNetOrch::addOperation(const Request& request)
         }
         else if (name == "vxlan_tunnel")
         {
-            tunnel = request.getAttrString("vxlan_tunnel");
-        }
-        else if (name == "vxlan_tunnel2")
-        {
-            tunnel2 = request.getAttrString("vxlan_tunnel2");
+            tunnel_list = request.getAttrSet("vxlan_tunnel");
         }
         else if (name == "scope")
         {
@@ -524,39 +507,31 @@ bool VNetOrch::addOperation(const Request& request)
         {
             VxlanTunnelOrch* vxlan_orch = gDirectory.get<VxlanTunnelOrch*>();
 
-            if (!vxlan_orch->isTunnelExists(tunnel))
+            for (const auto& tunnel : tunnel_list)
             {
-                SWSS_LOG_WARN("Vxlan tunnel '%s' doesn't exist", tunnel.c_str());
-                return false;
-            }
-
-            if (!tunnel2.empty() && !vxlan_orch->isTunnelExists(tunnel2))
-            {
-                SWSS_LOG_WARN("Vxlan tunnel2 '%s' doesn't exist", tunnel2.c_str());
-                return false;
+                if (!vxlan_orch->isTunnelExists(tunnel))
+                {
+                    SWSS_LOG_WARN("Vxlan tunnel '%s' doesn't exist", tunnel.c_str());
+                    return false;
+                }
             }
 
             if (it == std::end(vnet_table_))
             {
-                VNetInfo vnet_info = { tunnel, tunnel2, vni, peer_list, scope, advertise_prefix, overlay_dmac };
+                VNetInfo vnet_info = { tunnel_list, vni, peer_list, scope, advertise_prefix, overlay_dmac };
                 obj = createObject<VNetVrfObject>(vnet_name, vnet_info, attrs);
                 create = true;
 
                 VNetVrfObject *vrf_obj = dynamic_cast<VNetVrfObject*>(obj.get());
-                if (!vxlan_orch->createVxlanTunnelMap(tunnel, TUNNEL_MAP_T_VIRTUAL_ROUTER, vni,
-                                                      vrf_obj->getEncapMapId(), vrf_obj->getDecapMapId(), VXLAN_ENCAP_TTL))
+                for (const auto& tunnel : tunnel_list)
                 {
-                    SWSS_LOG_ERROR("VNET '%s', tunnel '%s', map create failed",
-                                    vnet_name.c_str(), tunnel.c_str());
-                    return false;
-                }
-
-                if (!tunnel2.empty() && !vxlan_orch->createVxlanTunnelMap(tunnel2, TUNNEL_MAP_T_VIRTUAL_ROUTER, vni,
-                                                      vrf_obj->getEncapMapId(), vrf_obj->getDecapMapId(), VXLAN_ENCAP_TTL))
-                {
-                    SWSS_LOG_ERROR("VNET '%s', tunnel '%s', map create failed",
-                                    vnet_name.c_str(), tunnel2.c_str());
-                    return false;
+                    if (!vxlan_orch->createVxlanTunnelMap(tunnel, TUNNEL_MAP_T_VIRTUAL_ROUTER, vni,
+                                                        vrf_obj->getEncapMapId(), vrf_obj->getDecapMapId(), VXLAN_ENCAP_TTL))
+                    {
+                        SWSS_LOG_ERROR("VNET '%s', tunnel '%s', map create failed",
+                                        vnet_name.c_str(), tunnel.c_str());
+                        return false;
+                    }
                 }
 
                 SWSS_LOG_NOTICE("VNET '%s' was added ", vnet_name.c_str());
@@ -569,21 +544,6 @@ bool VNetOrch::addOperation(const Request& request)
                     it->second->setOverlayDMac(overlay_dmac);
                     VNetRouteOrch* vnet_route_orch = gDirectory.get<VNetRouteOrch*>();
                     vnet_route_orch->updateAllMonitoringSession(vnet_name);
-                }
-
-                if (!tunnel2.empty())
-                {
-                    std::string existing_tunnel2 = dynamic_cast<VNetVrfObject*>(it->second.get())->getTunnel2Name();
-                    if (existing_tunnel2.empty())
-                    {
-                        VNetVrfObject* vrf_obj = dynamic_cast<VNetVrfObject*>(it->second.get());
-                        if (!vxlan_orch->createVxlanTunnelMap(tunnel2, TUNNEL_MAP_T_VIRTUAL_ROUTER, vni,
-                                                              vrf_obj->getEncapMapId(), vrf_obj->getDecapMapId(), VXLAN_ENCAP_TTL))
-                        {
-                            return false;
-                        }
-                        vrf_obj->setTunne2Name(tunnel2);
-                    }
                 }
             }
         }
@@ -642,17 +602,14 @@ bool VNetOrch::delOperation(const Request& request)
                 return false;
             }
 
-            if (!vxlan_orch->removeVxlanTunnelMap(vrf_obj->getTunnelName(), vrf_obj->getVni()))
+            set<string> tunnel_list = vrf_obj->getTunnelList();
+            for (const auto& tunnel : tunnel_list)
             {
-                SWSS_LOG_ERROR("VNET '%s' map delete failed", vnet_name.c_str());
-                return false;
-            }
-
-            std::string tunnel2_name = vrf_obj->getTunnel2Name();
-            if (!tunnel2_name.empty() && !vxlan_orch->removeVxlanTunnelMap(tunnel2_name, vrf_obj->getVni()))
-            {
-                SWSS_LOG_ERROR("VNET '%s' tunnel2 map delete failed", vnet_name.c_str());
-                return false;
+                if (!vxlan_orch->removeVxlanTunnelMap(tunnel, vrf_obj->getVni()))
+                {
+                    SWSS_LOG_ERROR("VNET '%s' map delete failed", vnet_name.c_str());
+                    return false;
+                }
             }
         }
     }

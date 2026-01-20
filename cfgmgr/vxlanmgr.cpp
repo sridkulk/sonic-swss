@@ -289,6 +289,7 @@ bool VxlanMgr::doVxlanCreateTask(const KeyOpFieldsValuesTuple & t)
     SWSS_LOG_ENTER();
 
     VxlanInfo info;
+    bool multiple_vxlan_tunnels = false;
     info.m_vnet = kfvKey(t);
     for (auto i : kfvFieldsValues(t))
     {
@@ -296,7 +297,15 @@ bool VxlanMgr::doVxlanCreateTask(const KeyOpFieldsValuesTuple & t)
         const std::string & value = fvValue(i);
         if (field == VXLAN_TUNNEL)
         {
-            info.m_vxlanTunnel = value;
+            auto tunnel_list = tokenize(value, ',');
+            if (tunnel_list.size() > 1)
+            {
+                multiple_vxlan_tunnels = true;
+            }
+            else
+            {
+                info.m_vxlanTunnel = *(tunnel_list.begin());
+            }
         }
         else if (field == VNI)
         {
@@ -304,9 +313,16 @@ bool VxlanMgr::doVxlanCreateTask(const KeyOpFieldsValuesTuple & t)
         }
     }
 
+    if (multiple_vxlan_tunnels)
+    {
+        SWSS_LOG_ERROR("Vnet %s has multiple vxlan tunnels, skipping vxlan creation",
+                       info.m_vnet.c_str());
+        return true;
+    }
+
     // If all information of vnet has been set
     if (info.m_vxlanTunnel.empty() 
-     || info.m_vni.empty())
+    || info.m_vni.empty())
     {
         SWSS_LOG_DEBUG("Vnet %s information is incomplete", info.m_vnet.c_str());
         // if the information is incomplete, just ignore this message
