@@ -21,6 +21,7 @@ extern MacAddress gMacAddress;
 
 // Fields name
 #define VXLAN_TUNNEL "vxlan_tunnel"
+#define VXLAN_TUNNEL_LIST "vxlan_tunnel_list"
 #define SOURCE_IP "src_ip"
 #define VNI "vni"
 #define VNET "vnet"
@@ -297,19 +298,15 @@ bool VxlanMgr::doVxlanCreateTask(const KeyOpFieldsValuesTuple & t)
         const std::string & value = fvValue(i);
         if (field == VXLAN_TUNNEL)
         {
-            auto tunnel_list = tokenize(value, ',');
-            if (tunnel_list.size() > 1)
-            {
-                multiple_vxlan_tunnels = true;
-            }
-            else
-            {
-                info.m_vxlanTunnel = *(tunnel_list.begin());
-            }
+            info.m_vxlanTunnel = value;
         }
         else if (field == VNI)
         {
             info.m_vni = value;
+        }
+        else if (field == VXLAN_TUNNEL_LIST)
+        {
+            multiple_vxlan_tunnels = true;
         }
     }
 

@@ -58,6 +58,13 @@ VNetVrfObject::VNetVrfObject(const std::string& vnet, const VNetInfo& vnetInfo,
     createObj(attrs);
 }
 
+VNetVrfObject::VNetVrfObject(const std::string& vnet, const VNetInfoMultiTunnel& vnetInfo,
+                             vector<sai_attribute_t>& attrs) : VNetObject(vnetInfo)
+{
+    vnet_name_ = vnet;
+    createObj(attrs);
+}
+
 sai_object_id_t VNetVrfObject::getVRidIngress() const
 {
     if (vr_ids_.find(VR_TYPE::ING_VR_VALID) != vr_ids_.end())
@@ -333,10 +340,14 @@ bool VNetVrfObject::removeTunnelNextHop(NextHopKey& nh)
 
 string VNetVrfObject::getTunnelNameForNextHop(const NextHopKey& nh)
 {
-    auto tunnel_list = getTunnelList();
+    if (!IsMultiTunnelVnet())
+    {
+        return getTunnelName();
+    }
 
-    VxlanTunnelOrch* vxlan_orch = gDirectory.get<VxlanTunnelOrch*>();
     auto nh_ip_family = nh.ip_address.isV4() ? AF_INET : AF_INET6;
+    auto tunnel_list = getTunnelList();
+    VxlanTunnelOrch* vxlan_orch = gDirectory.get<VxlanTunnelOrch*>();
 
     for (string tunnel_name : tunnel_list)
     {
@@ -379,6 +390,14 @@ VNetVrfObject::~VNetVrfObject()
 
 template <class T>
 std::unique_ptr<T> VNetOrch::createObject(const string& vnet_name, const VNetInfo& vnet_info,
+                                          vector<sai_attribute_t>& attrs)
+{
+    std::unique_ptr<T> vnet_obj(new T(vnet_name, vnet_info, attrs));
+    return vnet_obj;
+}
+
+template <class T>
+std::unique_ptr<T> VNetOrch::createObject(const string& vnet_name, const VNetInfoMultiTunnel& vnet_info,
                                           vector<sai_attribute_t>& attrs)
 {
     std::unique_ptr<T> vnet_obj(new T(vnet_name, vnet_info, attrs));
@@ -451,6 +470,7 @@ bool VNetOrch::addOperation(const Request& request)
     set<string> peer_list = {};
     bool peer = false, create = false, advertise_prefix = false;
     uint32_t vni=0;
+    string tunnel;
     set<string> tunnel_list = {};
     string scope;
     swss::MacAddress overlay_dmac;
@@ -475,7 +495,11 @@ bool VNetOrch::addOperation(const Request& request)
         }
         else if (name == "vxlan_tunnel")
         {
-            tunnel_list = request.getAttrSet("vxlan_tunnel");
+            tunnel = request.getAttrString("vxlan_tunnel");
+        }
+        else if (name == "vxlan_tunnel_list")
+        {
+            tunnel_list = request.getAttrSet("vxlan_tunnel_list");
         }
         else if (name == "scope")
         {
@@ -507,7 +531,7 @@ bool VNetOrch::addOperation(const Request& request)
         {
             VxlanTunnelOrch* vxlan_orch = gDirectory.get<VxlanTunnelOrch*>();
 
-            for (const auto& tunnel : tunnel_list)
+            if(!tunnel.empty())
             {
                 if (!vxlan_orch->isTunnelExists(tunnel))
                 {
@@ -515,11 +539,35 @@ bool VNetOrch::addOperation(const Request& request)
                     return false;
                 }
             }
+            else if (!tunnel_list.empty())
+            {
+                for (const auto& tunnel_name : tunnel_list)
+                {
+                    if (!vxlan_orch->isTunnelExists(tunnel_name))
+                    {
+                        SWSS_LOG_WARN("Vxlan tunnel '%s' doesn't exist", tunnel_name.c_str());
+                        return false;
+                    }
+                }
+            }
+            else
+            {
+                SWSS_LOG_ERROR("Vxlan tunnel or tunnel list must be specified for VNET '%s'", vnet_name.c_str());
+                return false;
+            }
 
             if (it == std::end(vnet_table_))
             {
-                VNetInfo vnet_info = { tunnel_list, vni, peer_list, scope, advertise_prefix, overlay_dmac };
-                obj = createObject<VNetVrfObject>(vnet_name, vnet_info, attrs);
+                if (!tunnel.empty())
+                {
+                    VNetInfo vnet_info = { tunnel, vni, peer_list, scope, advertise_prefix, overlay_dmac };
+                    obj = createObject<VNetVrfObject>(vnet_name, vnet_info, attrs);
+                }
+                else
+                {
+                    VNetInfoMultiTunnel vnet_info = { tunnel_list, vni, peer_list, scope, advertise_prefix, overlay_dmac };
+                    obj = createObject<VNetVrfObject>(vnet_name, vnet_info, attrs);
+                }
                 create = true;
 
                 VNetVrfObject *vrf_obj = dynamic_cast<VNetVrfObject*>(obj.get());

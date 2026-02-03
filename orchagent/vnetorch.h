@@ -66,6 +66,16 @@ enum class VR_TYPE
 
 struct VNetInfo
 {
+    string tunnel;
+    uint32_t vni;
+    set<string> peers;
+    string scope;
+    bool advertise_prefix;
+    swss::MacAddress overlay_dmac;
+};
+
+struct VNetInfoMultiTunnel
+{
     set<string> tunnels;
     uint32_t vni;
     set<string> peers;
@@ -95,6 +105,15 @@ class VNetObject
 {
 public:
     VNetObject(const VNetInfo& vnetInfo) :
+               tunnel_(vnetInfo.tunnel),
+               peer_list_(vnetInfo.peers),
+               vni_(vnetInfo.vni),
+               scope_(vnetInfo.scope),
+               advertise_prefix_(vnetInfo.advertise_prefix),
+               overlay_dmac_(vnetInfo.overlay_dmac)
+               {}
+
+    VNetObject(const VNetInfoMultiTunnel& vnetInfo) :
                tunnel_list_(vnetInfo.tunnels),
                peer_list_(vnetInfo.peers),
                vni_(vnetInfo.vni),
@@ -115,9 +134,19 @@ public:
         return peer_list_;
     }
 
+    string getTunnelName() const
+    {
+        return tunnel_;
+    }
+
     const set<string>& getTunnelList() const
     {
         return tunnel_list_;
+    }
+
+    bool IsMultiTunnelVnet() const
+    {
+        return !tunnel_list_.empty();
     }
 
     uint32_t getVni() const
@@ -149,6 +178,7 @@ public:
 
 private:
     set<string> peer_list_ = {};
+    string tunnel_;
     set<string> tunnel_list_ = {};
     uint32_t vni_;
     string scope_;
@@ -170,6 +200,8 @@ class VNetVrfObject : public VNetObject
 {
 public:
     VNetVrfObject(const string& vnet, const VNetInfo& vnetInfo, vector<sai_attribute_t>& attrs);
+
+    VNetVrfObject(const string& vnet, const VNetInfoMultiTunnel& vnetInfo, vector<sai_attribute_t>& attrs);
 
     sai_object_id_t getVRidIngress() const;
 
@@ -264,7 +296,7 @@ public:
 
     string getTunnelName(const std::string& name) const
     {
-        return *vnet_table_.at(name)->getTunnelList().begin();
+        return vnet_table_.at(name)->getTunnelName();
     }
 
     const set<string>& getTunnelList(const std::string& name) const
@@ -302,6 +334,8 @@ private:
 
     template <class T>
     std::unique_ptr<T> createObject(const string&, const VNetInfo&, vector<sai_attribute_t>&);
+    template <class T>
+    std::unique_ptr<T> createObject(const string&, const VNetInfoMultiTunnel&, vector<sai_attribute_t>&);
 
     VNetTable vnet_table_;
     VNetRequest request_;
