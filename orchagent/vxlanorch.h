@@ -161,6 +161,7 @@ public:
                                         tunnel_map_type_t type=TUNNEL_MAP_T_VIRTUAL_ROUTER);
     sai_object_id_t addDecapMapperEntry(sai_object_id_t obj, uint32_t vni,
                                         tunnel_map_type_t type=TUNNEL_MAP_T_VIRTUAL_ROUTER);
+    void removeMapperEntry(sai_object_id_t obj, uint32_t vni);
 
     void insertMapperEntry(sai_object_id_t encap, sai_object_id_t decap, uint32_t vni);
     std::pair<sai_object_id_t, sai_object_id_t> getMapperEntry(uint32_t vni);

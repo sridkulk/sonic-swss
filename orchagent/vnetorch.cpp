@@ -333,6 +333,29 @@ sai_object_id_t VNetVrfObject::getTunnelNextHop(NextHopKey& nh)
                 vnet_name_.c_str(), nh.ip_address.to_string().c_str());
     }
 
+    auto nhVni = nh.vni;
+    auto vnetVni = getVni();
+
+    if (nhVni != vnetVni)
+    {
+        auto tunnel_obj = vxlan_orch->getVxlanTunnel(tun_name);
+        auto mapper = tunnel_obj->getMapperEntry(nhVni);
+        if (mapper.second == SAI_NULL_OBJECT_ID)
+        {
+            try
+            {
+                auto encap_id = SAI_NULL_OBJECT_ID;
+                auto decap_id = tunnel_obj->addDecapMapperEntry(getDecapMapId(), nhVni);
+                tunnel_obj->insertMapperEntry(encap_id, decap_id, nhVni);
+            }
+            catch(const std::runtime_error& error)
+            {
+                SWSS_LOG_ERROR("Error adding tunnel map entry. Tunnel: %s. Error: %s",
+                    tun_name.c_str(), error.what());
+            }
+        }
+    }
+
     return nh_id;
 }
 
@@ -347,6 +370,16 @@ bool VNetVrfObject::removeTunnelNextHop(NextHopKey& nh)
         SWSS_LOG_ERROR("VNET %s Tunnel NextHop remove failed for '%s'",
                         vnet_name_.c_str(), nh.ip_address.to_string().c_str());
         return false;
+    }
+
+    auto nhVni = nh.vni;
+    auto vnetVni = getVni();
+
+    if (nhVni != vnetVni)
+    {
+        auto tunnel_obj = vxlan_orch->getVxlanTunnel(tun_name);
+        auto mapper = tunnel_obj->getMapperEntry(nhVni);
+        tunnel_obj->removeMapperEntry(mapper.second, nhVni);
     }
 
     return true;

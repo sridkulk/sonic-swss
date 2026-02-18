@@ -328,6 +328,11 @@ public:
         return (vnet_exec_ == VNET_EXEC::VNET_EXEC_BRIDGE);
     }
 
+    uint32_t getVni(std::string& name) const
+    {
+        return vnet_table_.at(name)->getVni();
+    }
+
     bool getVrfIdByVnetName(const std::string& vnet_name, sai_object_id_t &vrf_id);
     bool getVnetNameByVrfId(sai_object_id_t vrf_id, std::string& vnet_name);
 

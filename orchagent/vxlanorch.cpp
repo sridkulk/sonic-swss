@@ -560,6 +560,15 @@ sai_object_id_t VxlanTunnel::addDecapMapperEntry(sai_object_id_t obj, uint32_t v
     return create_tunnel_map_entry(map_t, decap_id, vni, 0, obj);
 }
 
+void VxlanTunnel::removeMapperEntry(sai_object_id_t obj, uint32_t vni)
+{
+    remove_tunnel_map_entry(obj);
+    if (tunnel_map_entries_.find(vni) != tunnel_map_entries_.end())
+    {
+        tunnel_map_entries_.erase(vni);
+    }
+}
+
 void VxlanTunnel::insertMapperEntry(sai_object_id_t encap, sai_object_id_t decap, uint32_t vni)
 {
     tunnel_map_entries_[vni] = std::pair<sai_object_id_t, sai_object_id_t>(encap, decap);
